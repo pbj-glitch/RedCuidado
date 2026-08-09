@@ -31,16 +31,115 @@
 
 ---
 
+### Prerrequisitos
+En Linux / macOS
+Asegúrate de contar con las siguientes herramientas en tu terminal:
+
+AWS CLI (configurado con credenciales activas)
+
+Terraform (>= 1.0)
+
+Ansible (>= 2.10)
+
+OpenSSH Client
+
+### Como conectarse local: 
+En Windows
+Ansible requiere un entorno de tipo POSIX. La forma más sencilla y recomendada de ejecutar el proyecto en Windows es utilizando WSL2:
+
+Abre PowerShell como Administrador e instala WSL:
+
+PowerShell
+wsl --install
+Reinicia tu equipo e inicia la distribución de Ubuntu.
+
+Instala las dependencias necesarias dentro de Ubuntu/WSL2:
+sudo apt update && sudo apt install -y terraform ansible awscli git openssh-client
+
+Paso a Paso para el Desplegado
+1. Clonar el Repositorio
+``` bash
+git clone <URL_DE_TU_REPOSITORIO>
+cd RedCuidado
+git checkout feature/migracion-dynamodb
+```
+
+3. Configurar Credenciales de AWS
+Si utilizas AWS Learner Lab, copia tus credenciales temporales (ubicadas en AWS Details -> AWS CLI) y ejecútalas en la terminal:
+``` bash
+export AWS_ACCESS_KEY_ID="TU_ACCESS_KEY"
+export AWS_SECRET_ACCESS_KEY="TU_SECRET_KEY"
+export AWS_SESSION_TOKEN="TU_SESSION_TOKEN"
+export AWS_DEFAULT_REGION="us-east-1"
+```
+
+3. Crear la Clave SSH Local
+El archivo main.tf registra automáticamente tu clave pública local en AWS. Si aún no tienes la clave mongo_key creada en ~/.ssh/, genérala ejecutando:
+``` bash
+ssh-keygen -t rsa -b 4000 -f ~/.ssh/mongo_key -N ""
+chmod 400 ~/.ssh/mongo_key
+```
+
+4. Ejecutar la Automatización (Terraform + Ansible)
+Navega al directorio terraform e inicia el despliegue:
+``` bash
+cd terraform
+terraform init
+terraform apply -auto-approve
+```
+¿Qué ocurre durante este paso?
+Terraform crea la infraestructura en AWS (Servidor Web, Nodos MongoDB, Bucket S3 y Tabla DynamoDB).
+
+Genera automáticamente el archivo ansible/inventory.ini con las IPs Privadas para la comunicación interna entre nodos y las IPs Públicas para el acceso SSH.
+
+Ejecuta el provisionador local-exec que llama al Playbook de Ansible.
+
+Ansible instala MongoDB 7.0, configura los parámetros de red e inicializa el Replica Set (rs0).
+
+Verificación del Clúster MongoDB
+Una vez completado el terraform apply, obtén las IPs asignadas:
+terraform output
+Conéctate por SSH al nodo primario e inspecciona el estado del clúster:
+``` bash
+ssh -i ~/.ssh/mongo_key ubuntu@<IP_MONGO_PRIMARY>
+mongosh --eval "rs.status()"
+```
+Deberás observar que el nodo al que te conectaste reporta "stateStr": "PRIMARY" y el nodo secundario reporta "stateStr": "SECONDARY".
+
+Destruir la Infraestructura
+Para eliminar todos los recursos creados en AWS y evitar consumos indeseados:
+
+``` bash
+cd terraform
+terraform destroy -auto-approve
+```
+
 ## 🛠️ Stack Tecnológico
 
-| Capa | Tecnología |
-| --- | --- |
-| **Backend** | Python / Django |
-| **Base de Datos** | PostgreSQL (vía Supabase) |
-| **Almacenamiento (S3)** | Supabase Storage (CORS Optimized) |
-| **Frontend** | Tailwind CSS / Lucide Icons |
-| **Gráficos** | Chart.js / FullCalendar |
-| **Despliegue** | Vercel (Edge Functions / Serverless) |
+1. Infraestructura Cloud (AWS)
+Amazon EC2 (t2.micro): Instancias de cómputo para el servidor web (RedCuidado-App) y los nodos del clúster de base de datos (Mongo-Primary, Mongo-Secondary).
+Amazon S3: Almacenamiento de objetos para archivos del proyecto (red-cuidado-storage-*).
+Amazon DynamoDB: Base de datos NoSQL gestionada (RedCuidado_Data).
+AWS VPC & Security Groups: Red privada virtual y reglas de firewall para aislar el tráfico (SSH en puerto 22, MongoDB en puerto 27017 en red privada).
+
+2. Infraestructura como Código (IaC) y Automatización
+Terraform: Creación, orquestación y gestión declarativa de todos los recursos en AWS.
+Ansible: Configuración de servidor, aprovisionamiento de software y automatización del Replica Set de MongoDB.
+OpenSSH / SSH Keys: Autenticación segura mediante llaves RSA/PEM (mongo_key).
+
+3. Base de Datos NoSQL
+MongoDB Community Server (v7.0): Motor de base de datos documento-orientado.
+MongoDB Replica Set (rs0): Configuración de alta disponibilidad con nodos Primary y Secondary comunicados por IPs privadas de AWS VPC.
+mongosh: Shell oficial de MongoDB para administración y verificación del estado del clúster.
+
+4. Capa de Aplicación y Sistema Operativo
+Sistema Operativo: Ubuntu 22.04 LTS (Jammy Jellyfish).
+Entorno de Ejecución: Python 3.10.
+Framework Web: Django.
+
+5. Herramientas de Control de Versiones y Entorno Local
+Git & GitHub: Control de versiones (rama feature/migracion-dynamodb).
+WSL2 (Ubuntu en Windows) / macOS Terminal: Entorno de ejecución local para Terraform y Ansible.
 
 ---
 
@@ -48,51 +147,19 @@
 
 ```text
 RedCuidado/
-├── RedCuidado/           # Configuración principal de Django
-├── lms/                  # Aplicación principal (Vistas, Modelos, Templates)
-│   ├── static/           # Activos (CSS, JS, Imágenes)
-│   ├── templates/        # Plantillas HTML con Tailwind
-│   └── templatetags/     # Filtros personalizados (lms_extras)
-├── staticfiles/          # Recopilación de estáticos para producción
-├── vercel.json           # Configuración de despliegue Serverless
-├── populate_data.py      # Script de generación de datos dinámicos
-└── requirements.txt      # Dependencias del proyecto
+├── ansible/
+│   ├── 01_setup_mongodb.yml   # Playbook para instalar y configurar el Replica Set
+│   └── inventory.ini          # Generado automáticamente por Terraform
+├── terraform/
+│   ├── main.tf                # Configuración de AWS (EC2, S3, DynamoDB, Security Groups)
+│   └── outputs.tf             # Salida con las IPs y recursos creados
+├── .gitignore
+└── README.md
 ```
 
 ---
 
-## 🚀 Instalación y Configuración Local
 
-1. **Clonar el repositorio:**
-   ```bash
-   git clone https://github.com/PapConAbrilar/RedCuidado.git
-   cd RedCuidado
-   ```
-
-2. **Configurar Entorno Virtual:**
-   ```bash
-   python -m venv env
-   source env/bin/activate  # En Linux/Mac
-   pip install -r requirements.txt
-   ```
-
-3. **Variables de Entorno (.env):**
-   Crea un archivo `.env` en la raíz con las siguientes credenciales:
-   ```env
-   DB_NAME=postgres
-   DB_USER=postgres.xxxx
-   DB_PASSWORD=xxxx
-   DB_HOST=xxxx.supabase.co
-   DB_PORT=5432
-   ```
-
-4. **Ejecutar Migraciones y Servidor:**
-   ```bash
-   python manage.py migrate
-   python manage.py runserver
-   ```
-
----
 
 ## 🛡️ Seguridad y Roles
 

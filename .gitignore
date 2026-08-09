@@ -1,0 +1,25 @@
+# Entornos virtuales y credenciales
+env/
+.env
+.DS_Store
+
+# Archivos de base de datos local y cache
+*.sqlite3
+__pycache__/
+*.pyc
+
+# Archivos de estado de Terraform
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.backup
+terraform/.terraform.lock.hcl
+terraform/*.tfvars
+
+#llaves ssh y credenciales
+*.pem
+*.pub
+mongo_key*
+id_rsa*
+
+#Ansible
+asible/inventory.ini

@@ -1,0 +1,32 @@
+---
+- name: Automatizacion de Preparacion y Carga ETL
+  hosts: local
+  vars:
+    base_dir: "{{ playbook_dir }}/.."
+    python_bin: "{{ base_dir }}/env/bin/python"
+
+  tasks:
+    - name: Task 1 - Instalar dependencias necesarias
+      ansible.builtin.pip:
+        requirements: "{{ base_dir }}/requirements.txt"
+        virtualenv: "{{ base_dir }}/env"
+
+    - name: Task 2 - Ejecutar migraciones de Django en SQLite
+      ansible.builtin.command:
+        cmd: "{{ python_bin }} manage.py migrate"
+        chdir: "{{ base_dir }}/RedCuidado"
+
+    - name: Task 3 - Poblar datos iniciales en SQLite
+      ansible.builtin.command:
+        cmd: "{{ python_bin }} populate_data.py"
+        chdir: "{{ base_dir }}/RedCuidado"
+
+    - name: Task 4 - Ejecutar el Pipeline ETL hacia AWS DynamoDB
+      ansible.builtin.command:
+        cmd: "{{ python_bin }} scripts/etl_from_sqlite.py"
+        chdir: "{{ base_dir }}"
+      register: etl_result
+
+    - name: Task 5 - Mostrar reporte de salida del ETL
+      ansible.builtin.debug:
+        msg: "{{ etl_result.stdout_lines }}"
