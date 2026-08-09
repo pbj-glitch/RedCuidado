@@ -31,7 +31,7 @@
 
 ---
 
-###Prerrequisitos
+### Prerrequisitos
 En Linux / macOS
 Asegúrate de contar con las siguientes herramientas en tu terminal:
 
@@ -43,7 +43,7 @@ Ansible (>= 2.10)
 
 OpenSSH Client
 
-###Como conectarse local: 
+### Como conectarse local: 
 En Windows
 Ansible requiere un entorno de tipo POSIX. La forma más sencilla y recomendada de ejecutar el proyecto en Windows es utilizando WSL2:
 
