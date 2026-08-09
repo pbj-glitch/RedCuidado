@@ -11,11 +11,6 @@ provider "aws" {
   region = "us-east-1"
 }
 
-# -----------------------------------------------------------------------------
-# SECURITY GROUPS (REGLAS DE RED)
-# -----------------------------------------------------------------------------
-
-# Security Group para la Aplicacion Web
 resource "aws_security_group" "sg_web" {
   name        = "redcuidado-web-sg"
   description = "Permitir HTTP, HTTPS y SSH"
@@ -24,14 +19,14 @@ resource "aws_security_group" "sg_web" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] # SSH desde cualquier IP
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   ingress {
     from_port   = 8000
     to_port     = 8000
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] # Django / Web
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   egress {
@@ -42,24 +37,22 @@ resource "aws_security_group" "sg_web" {
   }
 }
 
-# Security Group para los Nodos de MongoDB
 resource "aws_security_group" "sg_mongo" {
   name        = "redcuidado-mongo-sg"
-  description = "Permitir traffic interno de MongoDB y SSH"
+  description = "Permitir tráfico interno de MongoDB y SSH"
 
   ingress {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] # SSH para Ansible
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Permitir puerto 27017 entre los nodos del cluster y desde la App Web
   ingress {
     from_port   = 27017
     to_port     = 27017
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] # En producción se limita a las IPs de la VPC
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   egress {
@@ -70,20 +63,15 @@ resource "aws_security_group" "sg_mongo" {
   }
 }
 
-# -----------------------------------------------------------------------------
-# INSTANCIAS EC2
-# -----------------------------------------------------------------------------
-# 1. Registrar tu clave local en AWS automáticamente
 resource "aws_key_pair" "deployer" {
   key_name   = "mongo_key_aws"
   public_key = file("~/.ssh/mongo_key.pub")
 }
 
-# 2. Asignar esa clave registrada a tus instancias
 resource "aws_instance" "web" {
   ami                    = "ami-0c7217cdde317cfec"
   instance_type          = "t2.micro"
-  key_name               = aws_key_pair.deployer.key_name  # <--- Asignación automática
+  key_name               = aws_key_pair.deployer.key_name
   vpc_security_group_ids = [aws_security_group.sg_web.id]
   tags                   = { Name = "RedCuidado-App" }
 }
@@ -91,7 +79,7 @@ resource "aws_instance" "web" {
 resource "aws_instance" "mongo_primary" {
   ami                    = "ami-0c7217cdde317cfec"
   instance_type          = "t2.micro"
-  key_name               = aws_key_pair.deployer.key_name  # <--- Asignación automática
+  key_name               = aws_key_pair.deployer.key_name
   vpc_security_group_ids = [aws_security_group.sg_mongo.id]
   tags                   = { Name = "Mongo-Primary" }
 }
@@ -99,14 +87,18 @@ resource "aws_instance" "mongo_primary" {
 resource "aws_instance" "mongo_secondary" {
   ami                    = "ami-0c7217cdde317cfec"
   instance_type          = "t2.micro"
-  key_name               = aws_key_pair.deployer.key_name  # <--- Asignación automática
+  key_name               = aws_key_pair.deployer.key_name
   vpc_security_group_ids = [aws_security_group.sg_mongo.id]
-  tags                   = { Name = "Mongo-Secondary" }
+  tags                   = { Name = "Mongo-Secondary-1" }
 }
 
-# -----------------------------------------------------------------------------
-# DYNAMODB & S3 (RECURSOS COMPLEMENTARIOS)
-# -----------------------------------------------------------------------------
+resource "aws_instance" "mongo_secondary2" {
+  ami                    = "ami-0c7217cdde317cfec"
+  instance_type          = "t2.micro"
+  key_name               = aws_key_pair.deployer.key_name
+  vpc_security_group_ids = [aws_security_group.sg_mongo.id]
+  tags                   = { Name = "Mongo-Secondary-2" }
+}
 
 resource "aws_dynamodb_table" "red_cuidado" {
   name           = "RedCuidado_Data"
@@ -137,9 +129,10 @@ resource "aws_s3_bucket" "storage" {
   force_destroy = true
 }
 
-# -----------------------------------------------------------------------------
-# OUTPUTS (PARA OBTENER LAS IPs AUTOMÁTICAMENTE PARA ANSIBLE)
-# -----------------------------------------------------------------------------
+resource "aws_glue_catalog_database" "athena_analytics" {
+  name = "redcuidado_analytics"
+}
+
 
 output "ip_web" {
   value = aws_instance.web.public_ip
@@ -153,9 +146,10 @@ output "ip_mongo_secondary" {
   value = aws_instance.mongo_secondary.public_ip
 }
 
-# -----------------------------------------------------------------------------
-# EJECUCIÓN DE ANSIBLE
-# -----------------------------------------------------------------------------
+output "ip_mongo_secondary2" {
+  value = aws_instance.mongo_secondary2.public_ip
+}
+
 
 resource "local_file" "ansible_inventory" {
   content = <<EOF
@@ -168,9 +162,13 @@ ${aws_instance.mongo_primary.public_ip} ansible_user=ubuntu ansible_ssh_private_
 [mongodb_secondary]
 ${aws_instance.mongo_secondary.public_ip} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/mongo_key private_ip=${aws_instance.mongo_secondary.private_ip}
 
+[mongodb_secondary2]
+${aws_instance.mongo_secondary2.public_ip} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/mongo_key private_ip=${aws_instance.mongo_secondary2.private_ip}
+
 [mongodb:children]
 mongodb_primary
 mongodb_secondary
+mongodb_secondary2
 
 [all:vars]
 ansible_ssh_common_args='-o StrictHostKeyChecking=no'
@@ -179,13 +177,13 @@ EOF
   filename = "${path.module}/../ansible/inventory.ini"
 }
 
-# 2. Ejecutar Ansible usando el inventario recién creado
 resource "null_resource" "ejecutar_ansible" {
   depends_on = [
     local_file.ansible_inventory,
     aws_instance.web,
     aws_instance.mongo_primary,
-    aws_instance.mongo_secondary
+    aws_instance.mongo_secondary,
+    aws_instance.mongo_secondary2
   ]
 
   provisioner "local-exec" {
