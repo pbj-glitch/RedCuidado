@@ -1,0 +1,14 @@
+---
+- name: Desplegar App Django
+  hosts: webserver
+  tasks:
+    - name: Clonar Repositorio
+      ansible.builtin.git:
+        repo: 'https://github.com/tu-usuario/RedCuidado.git'
+        dest: /home/ubuntu/app
+
+    - name: Configurar URI de conexion NoSQL con Failover
+      ansible.builtin.lineinfile:
+        path: /home/ubuntu/app/RedCuidado/settings.py
+        regexp: '^MONGO_URI ='
+        line: "MONGO_URI = 'mongodb://IP_PRIMARY:27017,IP_SECONDARY:27017/RedCuidado?replicaSet=rs0'"

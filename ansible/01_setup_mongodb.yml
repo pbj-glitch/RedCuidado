@@ -1,0 +1,69 @@
+---
+- name: Configurar Nodos MongoDB
+  hosts: mongodb
+  become: true
+  tasks:
+    - name: Instalar dependencias iniciales
+      ansible.builtin.apt:
+        name:
+          - gnupg
+          - curl
+        state: present
+        update_cache: yes
+
+    - name: Agregar clave GPG oficial de MongoDB
+      ansible.builtin.apt_key:
+        url: https://www.mongodb.org/static/pgp/server-7.0.asc
+        state: present
+
+    - name: Agregar repositorio oficial de MongoDB 7.0 para Ubuntu Jammy (22.04)
+      ansible.builtin.apt_repository:
+        repo: "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse"
+        state: present
+        update_cache: yes
+
+    - name: Instalar MongoDB Community Server
+      ansible.builtin.apt:
+        name: mongodb-org
+        state: present
+        update_cache: yes
+
+    - name: Reemplazar bindIp por defecto en mongod.conf
+      ansible.builtin.replace:
+        path: /etc/mongod.conf
+        regexp: 'bindIp: 127.0.0.1'
+        replace: 'bindIp: 0.0.0.0'
+
+    - name: Configurar nombre de Replica Set en mongod.conf
+      ansible.builtin.blockinfile:
+        path: /etc/mongod.conf
+        block: |
+          replication:
+            replSetName: "rs0"
+
+    - name: Iniciar y habilitar servicio MongoDB
+      ansible.builtin.systemd:
+        name: mongod
+        state: restarted
+        enabled: yes
+
+- name: Inicializar Replica Set en el Nodo Principal
+  hosts: mongodb_primary
+  become: true
+  tasks:
+    - name: Esperar a que MongoDB responda en el puerto 27017
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host }}"
+        port: 27017
+        timeout: 30
+
+- name: Ejecutar rs.initiate() con IPs Privadas
+      ansible.builtin.command: >
+        mongosh --eval "rs.initiate({_id: 'rs0', members: [
+          {_id: 0, host: '{{ hostvars[groups['mongodb_primary'][0]]['private_ip'] }}:27017'},
+          {_id: 1, host: '{{ hostvars[groups['mongodb_secondary'][0]]['private_ip'] }}:27017'}
+        ]})"
+      register: replica_init
+      failed_when: 
+        - replica_init.rc != 0 
+        - "'already initialized' not in replica_init.stderr"
