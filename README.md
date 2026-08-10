@@ -36,11 +36,8 @@ En Linux / macOS
 Asegúrate de contar con las siguientes herramientas en tu terminal:
 
 AWS CLI (configurado con credenciales activas)
-
 Terraform (>= 1.0)
-
 Ansible (>= 2.10)
-
 OpenSSH Client
 
 ### Como conectarse local: 
@@ -50,7 +47,9 @@ Ansible requiere un entorno de tipo POSIX. La forma más sencilla y recomendada 
 Abre PowerShell como Administrador e instala WSL:
 
 PowerShell
+``` bash
 wsl --install
+```
 Reinicia tu equipo e inicia la distribución de Ubuntu.
 
 Instala las dependencias necesarias dentro de Ubuntu/WSL2:
@@ -89,11 +88,8 @@ terraform apply -auto-approve
 ```
 ¿Qué ocurre durante este paso?
 Terraform crea la infraestructura en AWS (Servidor Web, Nodos MongoDB, Bucket S3 y Tabla DynamoDB).
-
 Genera automáticamente el archivo ansible/inventory.ini con las IPs Privadas para la comunicación interna entre nodos y las IPs Públicas para el acceso SSH.
-
 Ejecuta el provisionador local-exec que llama al Playbook de Ansible.
-
 Ansible instala MongoDB 7.0, configura los parámetros de red e inicializa el Replica Set (rs0).
 
 Verificación del Clúster MongoDB
@@ -120,24 +116,30 @@ terraform destroy -auto-approve
 Amazon EC2 (t2.micro): Instancias de cómputo para el servidor web (RedCuidado-App) y los nodos del clúster de base de datos (Mongo-Primary, Mongo-Secondary).
 Amazon S3: Almacenamiento de objetos para archivos del proyecto (red-cuidado-storage-*).
 Amazon DynamoDB: Base de datos NoSQL gestionada (RedCuidado_Data).
+AWS Glue Data Catalog: (Nuevo componente de soporte) Catálogo centralizado que almacena los esquemas y metadatos de los archivos en S3 para que Athena sepa cómo interpretarlos.
 AWS VPC & Security Groups: Red privada virtual y reglas de firewall para aislar el tráfico (SSH en puerto 22, MongoDB en puerto 27017 en red privada).
 
-2. Infraestructura como Código (IaC) y Automatización
-Terraform: Creación, orquestación y gestión declarativa de todos los recursos en AWS.
-Ansible: Configuración de servidor, aprovisionamiento de software y automatización del Replica Set de MongoDB.
+3. Capa de Analítica y Big Data (Nueva Capa)
+Amazon Athena: Motor de consultas SQL interactivo y serverless que analiza directamente los datos almacenados en S3 (Data Lake) sin importar un motor de BD tradicional.
+AWS Glue (Crawlers): (Opcional) Servicio para escanear automáticamente los archivos en S3 y crear los esquemas de tablas en Athena/Glue.
+
+3. Infraestructura como Código (IaC) y Automatización
+Terraform: Declaración y despliegue de la infraestructura existente, sumando ahora la creación de la Base de Datos y Tablas en AWS Glue/Athena, los buckets de resultados de Athena y sus políticas de permisos IAM.
+Ansible: Configuración de servidor, aprovisionamiento de software y automatización del Replica Set de MongoDB (y opcionalmente la ejecución de scripts ETL/exportadores hacia S3).
 OpenSSH / SSH Keys: Autenticación segura mediante llaves RSA/PEM (mongo_key).
 
-3. Base de Datos NoSQL
+4. Base de Datos NoSQL
 MongoDB Community Server (v7.0): Motor de base de datos documento-orientado.
 MongoDB Replica Set (rs0): Configuración de alta disponibilidad con nodos Primary y Secondary comunicados por IPs privadas de AWS VPC.
 mongosh: Shell oficial de MongoDB para administración y verificación del estado del clúster.
 
-4. Capa de Aplicación y Sistema Operativo
+5. Capa de Aplicación y Sistema Operativo
 Sistema Operativo: Ubuntu 22.04 LTS (Jammy Jellyfish).
 Entorno de Ejecución: Python 3.10.
+Librerías de Conexión: PyAthena o boto3 en Python para ejecutar consultas SQL a Athena directamente desde la app web o desde scripts de reporte.
 Framework Web: Django.
 
-5. Herramientas de Control de Versiones y Entorno Local
+6. Herramientas de Control de Versiones y Entorno Local
 Git & GitHub: Control de versiones (rama feature/migracion-dynamodb).
 WSL2 (Ubuntu en Windows) / macOS Terminal: Entorno de ejecución local para Terraform y Ansible.
 
@@ -147,12 +149,21 @@ WSL2 (Ubuntu en Windows) / macOS Terminal: Entorno de ejecución local para Terr
 
 ```text
 RedCuidado/
+├── RedCuidado/               # Proyecto Web (Django LMS)
+│   ├── lms/                  # Aplicación de gestión de aprendizaje y bitácoras
+│   ├── manage.py
+│   └── requirements.txt
 ├── ansible/
-│   ├── 01_setup_mongodb.yml   # Playbook para instalar y configurar el Replica Set
-│   └── inventory.ini          # Generado automáticamente por Terraform
+│   ├── 01_setup_mongodb.yml  # Aprovisionamiento del clúster Replica Set
+│   ├── 02_deploy_app.yml     # Despliegue de la aplicación Django en EC2
+│   ├── deploy_etl.yml        # Automatización de tareas de extracción de datos
+│   └── inventory.ini         # Generado dinámicamente por Terraform
+├── scripts/                  # Pipelines ETL (Extract, Transform, Load)
+│   ├── etl_migration.py      # Extracción de BDs a formato compatible con S3/Athena
+│   └── etl_from_sqlite.py    # Migración de datos heredados
 ├── terraform/
-│   ├── main.tf                # Configuración de AWS (EC2, S3, DynamoDB, Security Groups)
-│   └── outputs.tf             # Salida con las IPs y recursos creados
+│   ├── main.tf               # AWS: EC2, S3 (Data Lake), DynamoDB, Athena y Glue Catalog
+│   └── outputs.tf            # Salidas: IPs, S3 Bucket Name, Athena Database/Workgroup
 ├── .gitignore
 └── README.md
 ```
@@ -172,9 +183,9 @@ La plataforma implementa un sistema robusto de permisos mediante decoradores per
 
 ## 👥 Equipo de Desarrollo
 
-*   **Benjamín Pinto**
-*   **Benjamín Levitt**
+*   **Maria Poddubnaya**
 *   **Ian Spikin**
+*   **Emilio Hanna**
 
 ---
 © 2026 RedCuidado - Innovación en el Cuidado del Adulto Mayor.
