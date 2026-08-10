@@ -55,15 +55,15 @@
       ansible.builtin.wait_for:
         host: "{{ ansible_host }}"
         port: 27017
-        timeout: 30
+        timeout: 60
 
-- name: Ejecutar rs.initiate() con IPs Privadas
+    - name: Ejecutar rs.initiate() con IPs privadas
       ansible.builtin.command: >
-        mongosh --eval "rs.initiate({_id: 'rs0', members: [
-          {_id: 0, host: '{{ hostvars[groups['mongodb_primary'][0]]['private_ip'] }}:27017'},
-          {_id: 1, host: '{{ hostvars[groups['mongodb_secondary'][0]]['private_ip'] }}:27017'}
-        ]})"
+        mongosh --quiet --eval "try { rs.status(); print('already initialized'); }
+        catch (error) { rs.initiate({_id: 'rs0', members: [
+        {_id: 0, host: '{{ hostvars[groups['mongodb_primary'][0]]['private_ip'] }}:27017'},
+        {_id: 1, host: '{{ hostvars[groups['mongodb_secondary'][0]]['private_ip'] }}:27017'},
+        {_id: 2, host: '{{ hostvars[groups['mongodb_secondary2'][0]]['private_ip'] }}:27017'}
+        ]}); }"
       register: replica_init
-      failed_when: 
-        - replica_init.rc != 0 
-        - "'already initialized' not in replica_init.stderr"
+      changed_when: "'already initialized' not in replica_init.stdout"

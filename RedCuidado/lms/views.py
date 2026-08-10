@@ -285,23 +285,26 @@ def reports_view(request):
     hq = request.GET.get('headquarters')
     
     # Querysets base para métricas
-    profiles = UserProfile.objects.all()
-    enrollments = Enrollment.objects.filter(is_completed=True)
+    profiles = UserProfile.objects.filter(user__is_active=True)
+    all_enrollments = Enrollment.objects.all()
     results = TestResult.objects.all()
     
     if area_id:
         profiles = profiles.filter(work_area_id=area_id)
-        enrollments = enrollments.filter(user__profile__work_area_id=area_id)
+        all_enrollments = all_enrollments.filter(user__profile__work_area_id=area_id)
         results = results.filter(user__profile__work_area_id=area_id)
     if hq:
         profiles = profiles.filter(headquarters=hq)
-        enrollments = enrollments.filter(user__profile__headquarters=hq)
+        all_enrollments = all_enrollments.filter(user__profile__headquarters=hq)
         results = results.filter(user__profile__headquarters=hq)
 
     # Métricas Principales
     total_collaborators = profiles.count()
+    enrollments = all_enrollments.filter(is_completed=True)
     total_completions = enrollments.count()
     total_courses = Course.objects.count()
+    total_enrollments = all_enrollments.count()
+    completion_rate = (total_completions / total_enrollments * 100) if total_enrollments else 0
     avg_score = results.aggregate(Avg('score'))['score__avg'] or 0
     
     # 1. Completitud por Área (Gráfico de Barras)
@@ -336,6 +339,7 @@ def reports_view(request):
         'total_collaborators': total_collaborators,
         'total_completions': total_completions,
         'total_courses': total_courses,
+        'completion_rate': round(completion_rate, 1),
         'avg_score': round(avg_score, 1),
         'area_stats': list(area_stats),
         'monthly_data': monthly_data,
