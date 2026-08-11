@@ -102,7 +102,14 @@ ssh -i ~/.ssh/mongo_key ubuntu@<IP_MONGO_PRIMARY>
 mongosh --eval "rs.status()"
 ```
 Deberás observar que el nodo al que te conectaste reporta "stateStr": "PRIMARY" y el nodo secundario reporta "stateStr": "SECONDARY".
-
+Para botar el nodo primario hay que ejecutar: 
+``` bash
+sudo systemctl stop mongod
+```
+Y actualizar el nodo secundario para ver si es que se convierte en primario: 
+``` bash
+mongosh --eval "rs.status()"
+```
 Destruir la Infraestructura
 Para eliminar todos los recursos creados en AWS y evitar consumos indeseados:
 
