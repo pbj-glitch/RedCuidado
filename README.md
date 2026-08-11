@@ -66,6 +66,7 @@ git checkout feature/migracion-dynamodb
 3. Configurar Credenciales de AWS
 Si utilizas AWS Learner Lab, copia tus credenciales temporales (ubicadas en AWS Details -> AWS CLI) y ejecútalas en la terminal:
 ``` bash
+source env/bin/activate    # En Mac/Linux/WSL
 export AWS_ACCESS_KEY_ID="TU_ACCESS_KEY"
 export AWS_SECRET_ACCESS_KEY="TU_SECRET_KEY"
 export AWS_SESSION_TOKEN="TU_SESSION_TOKEN"
