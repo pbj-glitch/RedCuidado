@@ -1,5 +1,8 @@
 # Entornos virtuales y credenciales
 env/
+(env)/
+venv/
+.venv/
 .env
 .DS_Store
 
@@ -14,6 +17,10 @@ terraform/*.tfstate
 terraform/*.tfstate.backup
 terraform/.terraform.lock.hcl
 terraform/*.tfvars
+
+#exportaciones temporales de datos
+csv_export/
+athena_create_tables_rendered.sql
 
 #llaves ssh y credenciales
 *.pem

@@ -1,34 +1,24 @@
 """
-Genera los mismos CSV que sube etl_from_sqlite.py a S3, pero LOCALMENTE
-y sin necesitar boto3 ni credenciales de AWS.
+Genera los mismos CSV que espera Athena leyendo directamente desde DynamoDB.
+Soporta uso local y automatizado con Ansible / AWS CLI.
 
 Uso:
     python scripts/generate_csv_local.py
     python scripts/generate_csv_local.py --output-dir mis_csvs
-
-Los archivos quedan en <output_dir>/<tabla>/data.csv (por defecto en
-csv_export/<tabla>/data.csv), listos para:
-  a) que alguien con acceso a la consola de AWS los arrastre al bucket S3
-     en la ruta athena/source/<tabla>/data.csv, o
-  b) subirlos manualmente cuando recuperes credenciales.
-
-El esquema y el orden de columnas es IDÉNTICO al de scripts/etl_from_sqlite.py
-para que las tablas externas de Athena (definidas en ese mismo script) lean
-estos archivos sin cambios.
 """
 
 import argparse
 import csv
-import sqlite3
+from decimal import Decimal
 from pathlib import Path
+import boto3
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-SQLITE_DB_PATH = BASE_DIR / "RedCuidado" / "db.sqlite3"
 
-# Debe coincidir exactamente con EXPORTS en scripts/etl_from_sqlite.py
+# Mapeo de esquema requerido por Athena
 EXPORTS = {
     "users": {
-        "query": "SELECT id, username, email, first_name, last_name, is_active FROM auth_user",
+        "entity_type": "user",
         "columns": [
             ("id", "bigint"),
             ("username", "string"),
@@ -39,7 +29,7 @@ EXPORTS = {
         ],
     },
     "courses": {
-        "query": "SELECT id, title, code, description, duration_days FROM lms_course",
+        "entity_type": "course",
         "columns": [
             ("id", "bigint"),
             ("title", "string"),
@@ -49,7 +39,7 @@ EXPORTS = {
         ],
     },
     "enrollments": {
-        "query": "SELECT id, user_id, course_id, enrolled_at, is_completed FROM lms_enrollment",
+        "entity_type": "enrollment",
         "columns": [
             ("id", "bigint"),
             ("user_id", "bigint"),
@@ -59,7 +49,7 @@ EXPORTS = {
         ],
     },
     "test_results": {
-        "query": "SELECT id, user_id, test_id, score, passed, attempted_at FROM lms_testresult",
+        "entity_type": "test_result",
         "columns": [
             ("id", "bigint"),
             ("user_id", "bigint"),
@@ -70,7 +60,7 @@ EXPORTS = {
         ],
     },
     "bitacora": {
-        "query": "SELECT id, author_id, entry_type, description, created_at FROM lms_bitacoraentry",
+        "entity_type": "bitacora",
         "columns": [
             ("id", "bigint"),
             ("author_id", "bigint"),
@@ -82,22 +72,39 @@ EXPORTS = {
 }
 
 
-def dict_factory(cursor, row):
-    fields = [column[0] for column in cursor.description]
-    return {key: value for key, value in zip(fields, row) if value is not None}
+def parse_decimal(val):
+    if isinstance(val, Decimal):
+        return int(val) if val % 1 == 0 else float(val)
+    return val
 
 
-def extract_sqlite_data(connection):
-    cursor = connection.cursor()
-    extracted = {}
-    for table_name, definition in EXPORTS.items():
-        try:
-            cursor.execute(definition["query"])
-            extracted[table_name] = cursor.fetchall()
-            print(f"Extraidas {len(extracted[table_name])} filas de {table_name}.")
-        except sqlite3.OperationalError as exc:
-            extracted[table_name] = []
-            print(f"Advertencia: no se pudo extraer {table_name}: {exc}")
+def extract_dynamodb_data(table_name="RedCuidado_Data", region_name="us-east-1"):
+    dynamodb = boto3.resource("dynamodb", region_name=region_name)
+    table = dynamodb.Table(table_name)
+
+    print(f"Escaneando tabla DynamoDB '{table_name}'...")
+    response = table.scan()
+    items = response.get("Items", [])
+
+    # Paginación en caso de que la tabla sea grande
+    while "LastEvaluatedKey" in response:
+        response = table.scan(ExclusiveStartKey=response["LastEvaluatedKey"])
+        items.extend(response.get("Items", []))
+
+    extracted = {table_key: [] for table_key in EXPORTS.keys()}
+
+    for item in items:
+        # Convierte números de DynamoDB (Decimal) a float/int
+        clean_item = {k: parse_decimal(v) for k, v in item.items()}
+        entity = clean_item.get("entity_type")
+
+        for table_key, definition in EXPORTS.items():
+            if entity == definition["entity_type"]:
+                extracted[table_key].append(clean_item)
+
+    for table_key, rows in extracted.items():
+        print(f"Extraídas {len(rows)} filas de entidad '{EXPORTS[table_key]['entity_type']}' -> {table_key}")
+
     return extracted
 
 
@@ -118,7 +125,8 @@ def write_local_csv(data, output_dir):
             for row in rows:
                 serialized = dict(row)
                 for column in boolean_columns:
-                    serialized[column] = "true" if bool(serialized.get(column)) else "false"
+                    val = serialized.get(column)
+                    serialized[column] = "true" if str(val).lower() in ["true", "1"] else "false"
                 writer.writerow(serialized)
 
         print(f"Generado: {csv_path} ({len(rows)} filas)")
@@ -126,34 +134,27 @@ def write_local_csv(data, output_dir):
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Genera localmente los CSV que espera Athena, sin usar AWS."
+        description="Extrae datos de DynamoDB y genera CSVs para AWS Athena."
     )
     parser.add_argument(
         "--output-dir",
         default=str(BASE_DIR / "csv_export"),
         help="Carpeta donde se guardan los CSV (por defecto: ./csv_export)",
     )
+    parser.add_argument(
+        "--table-name",
+        default="RedCuidado_Data",
+        help="Nombre de la tabla de DynamoDB",
+    )
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
-
-    if not SQLITE_DB_PATH.exists():
-        raise FileNotFoundError(
-            f"No existe la base SQLite en {SQLITE_DB_PATH}. "
-            "Corre primero: python manage.py migrate y los scripts populate_*.py"
-        )
-
-    with sqlite3.connect(SQLITE_DB_PATH) as connection:
-        connection.row_factory = dict_factory
-        data = extract_sqlite_data(connection)
-
+    data = extract_dynamodb_data(table_name=args.table_name)
     write_local_csv(data, args.output_dir)
 
-    print("\nListo. Sube cada carpeta a S3 en la ruta:")
-    print("  s3://<tu-bucket>/athena/source/<tabla>/data.csv")
-    print("(arrastrando el archivo data.csv de cada subcarpeta desde la consola de AWS)")
+    print("\nProceso finalizado con éxito.")
 
 
 if __name__ == "__main__":

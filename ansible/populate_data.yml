@@ -1,42 +1,46 @@
 ---
-- name: Poblado de datos automatizado para RedCuidado
-  hosts: app_server
+- name: Automatización de extracción DynamoDB y generación de CSVs para Athena
+  hosts: localhost
+  connection: local
   vars:
-    project_path: "/Users/maria/RedCuidado/RedCuidado"
-    python_bin: "/Users/maria/RedCuidado/env/bin/python3.12" # O 'python3' si no usas entorno virtual
+    project_path: "/Users/maria/RedCuidado"
+    terraform_path: "/Users/maria/RedCuidado/terraform"
+    python_bin: "/Users/maria/RedCuidado/env/bin/python3.12"
+    ansible_python_interpreter: "/Users/maria/RedCuidado/env/bin/python3.12"
+    dynamo_table: "RedCuidado_Data"
+    export_dir: "/Users/maria/RedCuidado/csv_export"
 
   tasks:
-    - name: Verificar que el directorio del proyecto existe
-      ansible.builtin.stat:
-        path: "{{ project_path }}"
-      register: project_dir
-
-    - name: Validar existencia del proyecto
-      ansible.builtin.fail:
-        msg: "El directorio del proyecto no existe en la ruta especificada."
-      when: not project_dir.stat.exists
-
-    - name: Ejecutar populate_areas_v2.py
+    - name: Obtener nombre del bucket S3 dinámicamente desde Terraform
       ansible.builtin.command:
-        cmd: "{{ python_bin }} populate_areas_v2.py"
+        cmd: "terraform output -raw s3_bucket_name"
+        chdir: "{{ terraform_path }}"
+      register: terraform_s3
+      changed_when: false
+
+    - name: Generar SQL para Athena con el bucket dinámico
+      ansible.builtin.shell:
+        cmd: "sed 's/TU-BUCKET/{{ terraform_s3.stdout }}/g' athena_create_tables.sql > athena_create_tables_rendered.sql"
         chdir: "{{ project_path }}"
-      register: result_areas
+      register: result_sql
       changed_when: true
 
-    - name: Mostrar resultado de áreas
-      ansible.builtin.debug:
-        var: result_areas.stdout
-
-    - name: Ejecutar populate_courses.py
+    - name: Generar CSVs desde DynamoDB
       ansible.builtin.command:
-        cmd: "{{ python_bin }} populate_courses.py"
+        cmd: "{{ python_bin }} scripts/generate_csv_local.py --output-dir {{ export_dir }} --table-name {{ dynamo_table }}"
         chdir: "{{ project_path }}"
-      register: result_courses
+      register: result_csv
       changed_when: true
 
-    - name: Ejecutar populate_data.py
-      ansible.builtin.command:
-        cmd: "{{ python_bin }} populate_data.py"
-        chdir: "{{ project_path }}"
-      register: result_data
-      changed_when: true
+    - name: Subir archivos CSV a Amazon S3 para Athena
+      amazon.aws.s3_object:
+        bucket: "{{ terraform_s3.stdout }}"
+        object: "athena/source/{{ item }}/data.csv"
+        src: "{{ export_dir }}/{{ item }}/data.csv"
+        mode: put
+      loop:
+        - users
+        - courses
+        - enrollments
+        - test_results
+        - bitacora
