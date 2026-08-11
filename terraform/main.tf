@@ -10,7 +10,7 @@ terraform {
 provider "aws" {
   region = "us-east-1"
 }
-
+# Security Group para la Aplicacion web
 resource "aws_security_group" "sg_web" {
   name        = "redcuidado-web-sg"
   description = "Permitir HTTP, HTTPS y SSH"
@@ -19,14 +19,14 @@ resource "aws_security_group" "sg_web" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = ["0.0.0.0/0"] # SSH desde cualquier IP
   }
 
   ingress {
     from_port   = 8000
     to_port     = 8000
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = ["0.0.0.0/0"] #Django / web
   }
 
   egress {
@@ -39,15 +39,15 @@ resource "aws_security_group" "sg_web" {
 
 resource "aws_security_group" "sg_mongo" {
   name        = "redcuidado-mongo-sg"
-  description = "Permitir tráfico interno de MongoDB y SSH"
+  description = "Permitir trafico interno de MongoDB y SSH"
 
   ingress {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = ["0.0.0.0/0"] #SSH para Ansible
   }
-
+#permitir puerto 271017 entre los nodos del cluster y desde la App Web
   ingress {
     from_port   = 27017
     to_port     = 27017
@@ -62,12 +62,13 @@ resource "aws_security_group" "sg_mongo" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
-
+#Instancias EC2
+# registrar clave local en AWS automaticamente
 resource "aws_key_pair" "deployer" {
   key_name   = "mongo_key_aws"
   public_key = file("~/.ssh/mongo_key.pub")
 }
-
+#asignar esa clave registrada a las instancias
 resource "aws_instance" "web" {
   ami                    = "ami-0c7217cdde317cfec"
   instance_type          = "t2.micro"
@@ -99,6 +100,8 @@ resource "aws_instance" "mongo_secondary2" {
   vpc_security_group_ids = [aws_security_group.sg_mongo.id]
   tags                   = { Name = "Mongo-Secondary-2" }
 }
+
+#DynamoDB y S3
 
 resource "aws_dynamodb_table" "red_cuidado" {
   name           = "RedCuidado_Data"
@@ -133,7 +136,7 @@ resource "aws_glue_catalog_database" "athena_analytics" {
   name = "redcuidado_analytics"
 }
 
-
+#Outputs para obtener las IPs automaticamente para ansible
 output "ip_web" {
   value = aws_instance.web.public_ip
 }
@@ -150,7 +153,7 @@ output "ip_mongo_secondary2" {
   value = aws_instance.mongo_secondary2.public_ip
 }
 
-
+#ejecucion ansible
 resource "local_file" "ansible_inventory" {
   content = <<EOF
 [webserver]
@@ -177,6 +180,7 @@ EOF
   filename = "${path.module}/../ansible/inventory.ini"
 }
 
+#ejecutar ansible usando el inventario recien creado
 resource "null_resource" "ejecutar_ansible" {
   depends_on = [
     local_file.ansible_inventory,
