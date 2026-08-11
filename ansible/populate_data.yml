@@ -1,0 +1,42 @@
+---
+- name: Poblado de datos automatizado para RedCuidado
+  hosts: app_server
+  vars:
+    project_path: "/Users/maria/RedCuidado/RedCuidado"
+    python_bin: "/Users/maria/RedCuidado/env/bin/python3.12" # O 'python3' si no usas entorno virtual
+
+  tasks:
+    - name: Verificar que el directorio del proyecto existe
+      ansible.builtin.stat:
+        path: "{{ project_path }}"
+      register: project_dir
+
+    - name: Validar existencia del proyecto
+      ansible.builtin.fail:
+        msg: "El directorio del proyecto no existe en la ruta especificada."
+      when: not project_dir.stat.exists
+
+    - name: Ejecutar populate_areas_v2.py
+      ansible.builtin.command:
+        cmd: "{{ python_bin }} populate_areas_v2.py"
+        chdir: "{{ project_path }}"
+      register: result_areas
+      changed_when: true
+
+    - name: Mostrar resultado de áreas
+      ansible.builtin.debug:
+        var: result_areas.stdout
+
+    - name: Ejecutar populate_courses.py
+      ansible.builtin.command:
+        cmd: "{{ python_bin }} populate_courses.py"
+        chdir: "{{ project_path }}"
+      register: result_courses
+      changed_when: true
+
+    - name: Ejecutar populate_data.py
+      ansible.builtin.command:
+        cmd: "{{ python_bin }} populate_data.py"
+        chdir: "{{ project_path }}"
+      register: result_data
+      changed_when: true

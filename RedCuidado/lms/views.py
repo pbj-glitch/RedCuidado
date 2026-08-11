@@ -13,6 +13,7 @@ from datetime import timedelta
 from .models import Course, Module, Content, ContentProgress, Enrollment, TestResult, WorkArea, UserProfile, BitacoraEntry
 from .forms import CourseForm, ModuleForm, ContentForm, CollaboratorCreationForm
 
+
 def staff_required(view_func):
     @wraps(view_func)
     @login_required
