@@ -67,6 +67,9 @@ git checkout feature/migracion-dynamodb
 Si utilizas AWS Learner Lab, copia tus credenciales temporales (ubicadas en AWS Details -> AWS CLI) y ejecútalas en la terminal:
 ``` bash
 source env/bin/activate    # En Mac/Linux/WSL
+#instalar dependencias necesarias
+pip install boto3 pandas plotly streamlit
+
 export AWS_ACCESS_KEY_ID="TU_ACCESS_KEY"
 export AWS_SECRET_ACCESS_KEY="TU_SECRET_KEY"
 export AWS_SESSION_TOKEN="TU_SESSION_TOKEN"
@@ -110,6 +113,19 @@ Y actualizar el nodo secundario para ver si es que se convierte en primario:
 ``` bash
 mongosh --eval "rs.status()"
 ```
+Generar los datos para Big Data, sincronizar hacia amazon s3 y generar Dashboard
+```bash
+python scripts/seed_bigdata.py
+
+#sincronizar datos para Datos hacia Amazon S3 con Ansible
+cd ansible
+ansible-playbook -i inventory.ini populate_data.yml
+cd ..
+
+python -m streamlit run dashboard.py
+```
+
+
 Destruir la Infraestructura
 Para eliminar todos los recursos creados en AWS y evitar consumos indeseados:
 
@@ -117,6 +133,7 @@ Para eliminar todos los recursos creados en AWS y evitar consumos indeseados:
 cd terraform
 terraform destroy -auto-approve
 ```
+
 
 ## 🛠️ Stack Tecnológico
 
