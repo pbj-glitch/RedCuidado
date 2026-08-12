@@ -177,7 +177,6 @@ RedCuidado/
 ├── RedCuidado/               # Proyecto Web (Django LMS)
 │   ├── lms/                  # Aplicación de gestión de aprendizaje y bitácoras
 │   ├── manage.py
-│   └── requirements.txt
 ├── ansible/
 │   ├── 01_setup_mongodb.yml  # Aprovisionamiento del clúster Replica Set
 │   ├── 02_deploy_app.yml     # Despliegue de la aplicación Django en EC2
@@ -190,6 +189,10 @@ RedCuidado/
 │   ├── main.tf               # AWS: EC2, S3 (Data Lake), DynamoDB, Athena y Glue Catalog
 │   └── outputs.tf            # Salidas: IPs, S3 Bucket Name, Athena Database/Workgroup
 ├── .gitignore
+├── athena_create_datables.sql
+├── dashboard.py #dashboard
+├── requirements.txt
+├── terraform.tfstate
 └── README.md
 ```
 
